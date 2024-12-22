@@ -45,6 +45,45 @@ gouraud_fragment :: proc(this: ^GouraudShader, barycenter: [3]f64) -> (Color, bo
 	return color, false
 }
 
+ToonShader :: struct {
+	light:     [3]f64,
+	color:     Color,
+
+	// written by vertex shader, read by fragment shader
+	intensity: [3]f64,
+}
+
+toon_shader :: proc(this: ^ToonShader) -> Shader {
+	return Shader {
+		vertex = auto_cast (toon_vertex),
+		fragment = auto_cast (toon_fragment),
+		data = this,
+	}
+}
+
+toon_vertex :: proc(this: ^ToonShader, model: Model, iface, nverth: int) -> [4]f64 {
+	vdata := model.f[iface][nverth]
+	normal := model.vn[vdata.vn]
+	vert := model.v[vdata.v]
+
+	this.intensity[nverth] = max(0., linalg.vector_dot(normal, this.light))
+
+	output: [4]f64 = 1
+	output.xyz = vert
+	output = Viewport * Projection * ModelView * output
+	return output
+}
+
+toon_fragment :: proc(this: ^ToonShader, barycenter: [3]f64) -> (Color, bool) {
+	intensity := linalg.vector_dot(this.intensity, barycenter)
+	if intensity > 0.8 do intensity = 1
+	else if intensity > 0.4 do intensity = .6
+	else if intensity > 0.0 do intensity = .2
+
+	color := vec_to(Color, vec_to([3]f64, this.color) * intensity)
+	return color, false
+}
+
 
 main :: proc() {
 	model, ok := model_load_from_file("models/african_head.obj")
@@ -90,7 +129,13 @@ main :: proc() {
 	gouraud := GouraudShader {
 		light = light,
 	}
-	shader := gouraud_shader(&gouraud)
+	//shader := gouraud_shader(&gouraud)
+
+	toon := ToonShader {
+		light = light,
+		color = Color{100, 20, 200},
+	}
+	shader := toon_shader(&toon)
 
 	for _, i in model.f {
 		coords := [3][4]f64{}
@@ -106,7 +151,7 @@ main :: proc() {
 
 	zmin := math.F64_MAX
 	for z in zbuffer {
-		if z != -math.F64_MAX && z < zmin{
+		if z != -math.F64_MAX && z < zmin {
 			zmin = z
 		}
 	}
