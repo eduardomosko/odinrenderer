@@ -84,6 +84,56 @@ toon_fragment :: proc(this: ^ToonShader, barycenter: [3]f64) -> (Color, bool) {
 	return color, false
 }
 
+TextureShader :: struct {
+	light:     [3]f64,
+	texture:   ^image.Image,
+
+	// written by vertex shader, read by fragment shader
+	intensity: [3]f64,
+	uvs:       matrix[3, 3]f64,
+}
+
+texture_shader :: proc(this: ^TextureShader) -> Shader {
+	return Shader {
+		vertex = auto_cast (texture_vertex),
+		fragment = auto_cast (texture_fragment),
+		data = this,
+	}
+}
+
+texture_vertex :: proc(this: ^TextureShader, model: Model, iface, nverth: int) -> [4]f64 {
+	vdata := model.f[iface][nverth]
+	normal := model.vn[vdata.vn]
+	uvs := model.vt[vdata.vt]
+	vert := model.v[vdata.v]
+
+	this.intensity[nverth] = max(0., linalg.vector_dot(normal, this.light))
+	this.uvs[nverth] = uvs
+
+	output: [4]f64 = 1
+	output.xyz = vert
+	output = Viewport * Projection * ModelView * output
+	return output
+}
+
+texture_fragment :: proc(this: ^TextureShader, barycenter: [3]f64) -> (Color, bool) {
+	intensity := linalg.vector_dot(this.intensity, barycenter)
+	//intensity := (this.intensity[0] + this.intensity[1] + this.intensity[2]) / 3
+
+	uvs := this.uvs * barycenter
+	uvs.y = 1 - uvs.y // invert y
+	uvs.x *= f64(this.texture.width)
+	uvs.y *= f64(this.texture.height)
+	color := image_get(this.texture, int(uvs.x), int(uvs.y))
+
+	//if intensity > 0.8 do intensity = 1
+	//else if intensity > 0.4 do intensity = .6
+	//else if intensity > 0.0 do intensity = .2
+
+	color = vec_to(Color, vec_to([3]f64, color) * intensity)
+	return color, false
+}
+
 
 main :: proc() {
 	model, ok := model_load_from_file("models/african_head.obj")
@@ -99,7 +149,7 @@ main :: proc() {
 	img := image_create(600, 600)
 	defer image_destroy(&img)
 
-	slice.fill(img.pixels[:], Color{127, 127, 127})
+	//slice.fill(img.pixels[:], Color{127, 127, 127})
 
 	zbuffer := make([]f64, img.width * img.height)
 	slice.fill(zbuffer, -math.F64_MAX)
@@ -134,8 +184,16 @@ main :: proc() {
 	toon := ToonShader {
 		light = light,
 		color = Color{100, 20, 200},
+		//color = Color{255, 155, 0},
 	}
-	shader := toon_shader(&toon)
+	//shader := toon_shader(&toon)
+
+	textures := TextureShader {
+		light   = light,
+		texture = texture,
+		//color = Color{255, 155, 0},
+	}
+	shader := texture_shader(&textures)
 
 	for _, i in model.f {
 		coords := [3][4]f64{}

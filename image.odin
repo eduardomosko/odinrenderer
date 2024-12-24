@@ -30,7 +30,7 @@ image_get :: proc(img: ^image.Image, x, y: int) -> image.RGB_Pixel {
 	assert(img.channels == 3)
 	assert(img.depth == 8)
 	assert(x >= 0 && x < img.width, fmt.tprintf("x: %v, w: %v", x, img.width))
-	assert(y >= 0 && y < img.height)
+	assert(y >= 0 && y < img.height, fmt.tprintf("y: %v, h: %v", y, img.height))
 
 	pixel := image.RGB_Pixel{}
 
