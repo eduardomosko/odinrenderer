@@ -27,14 +27,14 @@ image_set :: proc(img: ^Image, color: Color, x: int, y: int) {
 }
 
 image_get :: proc(img: ^image.Image, x, y: int) -> image.RGB_Pixel {
-	assert(img.channels == 3)
+	//assert(img.channels == 3)
 	assert(img.depth == 8)
 	assert(x >= 0 && x < img.width, fmt.tprintf("x: %v, w: %v", x, img.width))
 	assert(y >= 0 && y < img.height, fmt.tprintf("y: %v, h: %v", y, img.height))
 
 	pixel := image.RGB_Pixel{}
 
-	n, err := bytes.buffer_read_at(&img.pixels, pixel[:], (x + y * img.width) * 3)
+	n, err := bytes.buffer_read_at(&img.pixels, pixel[:], (x + y * img.width) * img.channels)
 	assert(n == 3)
 	assert(err == nil)
 	return pixel
