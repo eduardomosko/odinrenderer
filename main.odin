@@ -182,9 +182,8 @@ texnormal_fragment :: proc(this: ^TexNormalShader, barycenter: [3]f64) -> (Color
 		int(uvs.x * f64(this.normals.width)),
 		int(uvs.y * f64(this.normals.height)),
 	)
-	u8normal.zyx = u8normal
-	normal := [3]f64{cast(f64)u8normal.x, cast(f64)u8normal.y, cast(f64)u8normal.z}
-	normal = (normal / 255.) * 2. - 1.
+	normal := vec_to([3]f64, u8normal)
+	normal -= 127.
 	normal = linalg.vector_normalize(normal)
 	intensity := max(0., linalg.vector_dot(normal, this.light))
 
@@ -234,7 +233,6 @@ phong_fragment :: proc(this: ^PhongShader, barycenter: [3]f64) -> (Color, bool) 
 		int(uvs.x * f64(this.normals.width)),
 		int(uvs.y * f64(this.normals.height)),
 	)
-	u8normal.zyx = u8normal
 	normal := vec_to([3]f64, u8normal)
 	normal = (normal / 255.) * 2. - 1.
 
@@ -283,6 +281,103 @@ phong_fragment :: proc(this: ^PhongShader, barycenter: [3]f64) -> (Color, bool) 
 }
 
 
+GouraudNormalShader :: struct {
+	light:      [3]f64,
+	texture:    ^image.Image,
+	tg_normals: ^image.Image,
+	index:      int,
+
+	// written by vertex shader, read by fragment shader
+	uvs:        matrix[3, 3]f64,
+	triangle:   matrix[3, 3]f64,
+	normals:    matrix[3, 3]f64,
+}
+
+gouraud_normal_shader :: proc(this: ^GouraudNormalShader) -> Shader {
+	return Shader {
+		vertex = auto_cast (gouraud_normal_vertex),
+		fragment = auto_cast (gouraud_normal_fragment),
+		data = this,
+	}
+}
+
+gouraud_normal_vertex :: proc(
+	this: ^GouraudNormalShader,
+	model: Model,
+	iface, nverth: int,
+) -> [4]f64 {
+	vdata := model.f[iface][nverth]
+	normal := model.vn[vdata.vn]
+	uvs := model.vt[vdata.vt]
+	vert := model.v[vdata.v]
+
+	this.uvs[nverth] = uvs
+
+	proj_normal: [4]f64 = 1
+	proj_normal.xyz = normal
+	proj_normal = linalg.inverse_transpose(Projection * ModelView) * proj_normal
+	this.normals[nverth] = proj_normal.xyz / proj_normal.w
+
+
+	output: [4]f64 = 1
+	output.xyz = vert
+	output = Projection * ModelView * output
+
+	this.triangle[nverth] = output.xyz / output.w
+	return Viewport * output
+}
+
+gouraud_normal_fragment :: proc(this: ^GouraudNormalShader, barycenter: [3]f64) -> (Color, bool) {
+	uvs := this.uvs * barycenter
+	uvs.y = 1 - uvs.y // invert y
+
+	color := image_get(
+		this.texture,
+		int(uvs.x * f64(this.texture.width)),
+		int(uvs.y * f64(this.texture.height)),
+	)
+
+	u8normal := image_get(
+		this.tg_normals,
+		int(uvs.x * f64(this.tg_normals.width)),
+		int(uvs.y * f64(this.tg_normals.height)),
+	)
+	normal := vec_to([3]f64, u8normal)
+	normal = (normal * 2.) / 255. - 1.
+	normal = linalg.vector_normalize(normal)
+
+	base_normal := linalg.normalize(this.normals * barycenter)
+
+	mat_darboux: matrix[3, 3]f64
+	mat_darboux[0] = this.triangle[1] - this.triangle[0]
+	mat_darboux[1] = this.triangle[2] - this.triangle[0]
+	mat_darboux[2] = base_normal
+	mat_darboux = linalg.inverse_transpose(mat_darboux)
+
+	mat_apply: matrix[3, 3]f64 // matrix for change of base
+	mat_apply[0] = linalg.normalize(
+		mat_darboux * [3]f64{this.uvs[1].x - this.uvs[0].x, this.uvs[2].x - this.uvs[0].x, 0},
+	) // i
+	mat_apply[1] = linalg.normalize(
+		mat_darboux * [3]f64{this.uvs[1].y - this.uvs[0].y, this.uvs[2].y - this.uvs[0].y, 0},
+	) // j
+	mat_apply[2] = base_normal
+
+
+	// change base
+	normal = linalg.normalize(mat_apply * normal)
+
+	light : [4]f64 = 1
+	light.xyz = this.light
+	light = Projection * ModelView * light
+
+	intensity := max(0., linalg.vector_dot(normal, light.xyz / light.w))
+	//intensity := linalg.vector_dot(this.intensity, barycenter)
+
+	color = vec_to(Color, vec_to([3]f64, color) * intensity)
+	return color, false
+}
+
 main :: proc() {
 	alloc: mem.Tracking_Allocator
 	mem.tracking_allocator_init(&alloc, context.allocator)
@@ -297,13 +392,19 @@ main :: proc() {
 	err: image.Error
 	texture: ^image.Image
 	normalsTexture: ^image.Image
+	normalTangentTexture: ^image.Image
 	specularTexture: ^image.Image
 
 	texture, err = tga.load_from_file("models/african_head_diffuse.tga")
+	//texture, err = tga.load_from_file("models/grid.tga")
 	assert(err == nil)
 	defer image.destroy(texture)
 
 	normalsTexture, err = tga.load_from_file("models/african_head_nm.tga")
+	assert(err == nil)
+	defer image.destroy(normalsTexture)
+
+	normalTangentTexture, err = tga.load_from_file("models/african_head_nm_tangent.tga")
 	assert(err == nil)
 	defer image.destroy(normalsTexture)
 
@@ -319,7 +420,7 @@ main :: proc() {
 	zbuffer := make([]f64, img.width * img.height)
 	slice.fill(zbuffer, -math.F64_MAX)
 
-	light := [3]f64{1, 1, 1}
+	light := [3]f64{-0.7316811755267406, 0.166377281535101, 0.66103045131733296}
 	light = linalg.vector_normalize(light)
 
 	scale := 2. / 3.
@@ -370,7 +471,14 @@ main :: proc() {
 		proj_mv     = Projection * ModelView,
 		proj_mv_inv = linalg.inverse_transpose(Projection * ModelView),
 	}
-	shader := phong_shader(&phong)
+	//shader := phong_shader(&phong)
+
+	gouraud_normal := GouraudNormalShader {
+		light      = light,
+		texture    = texture,
+		tg_normals = normalTangentTexture,
+	}
+	shader := gouraud_normal_shader(&gouraud_normal)
 
 	rl.SetConfigFlags(rl.ConfigFlags{.WINDOW_UNFOCUSED})
 	rl.InitWindow(cast(c.int)img.width * 2, cast(c.int)img.height, "Renderer")
@@ -398,6 +506,9 @@ main :: proc() {
 		if rl.IsKeyPressed(rl.KeyboardKey.P) {
 			shader = phong_shader(&phong)
 		}
+		if rl.IsKeyPressed(rl.KeyboardKey.H) {
+			shader = gouraud_normal_shader(&gouraud_normal)
+		}
 		if rl.IsKeyDown(rl.KeyboardKey.LEFT) {
 			angle += 20 * f64(rl.GetFrameTime())
 		}
@@ -417,8 +528,9 @@ main :: proc() {
 			light.x += 1 * f64(rl.GetFrameTime())
 		}
 
-		l:  = cast(^[3]f64)shader.data
-		l^ = light
+		l := cast(^[3]f64)shader.data
+		l^ = linalg.normalize(light)
+		fmt.printfln("light: %v", l^)
 
 		angle := linalg.to_radians(angle)
 		eye.x = math.cos(angle)

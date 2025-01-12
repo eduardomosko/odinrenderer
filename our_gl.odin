@@ -95,9 +95,12 @@ barycentric :: proc(t: [3][2]f64, p: [2]f64) -> [3]f64 {
 	return [3]f64{1 - uv.x - uv.y, uv.x, uv.y}
 }
 
-vec_to_type :: #force_inline proc "contextless" ($Target: typeid/[$Nr]$R, input: [$N]$T) -> Target {
+vec_to_type :: #force_inline proc "contextless" (
+	$Target: typeid/[$Nr]$R,
+	input: [$N]$T,
+) -> Target {
 	output: Target = 0
-    less := len(output) if len(output) < len(input) else len(input)
+	less := len(output) if len(output) < len(input) else len(input)
 	for i in 0 ..< less {
 		output[i] = cast(R)input[i]
 	}
@@ -105,19 +108,19 @@ vec_to_type :: #force_inline proc "contextless" ($Target: typeid/[$Nr]$R, input:
 }
 
 vec_to_ptr :: #force_inline proc "contextless" (output: ^[$Nr]$R, input: [$N]$T) {
-    less := len(output) if len(output) < len(input) else len(input)
+	less := len(output) if len(output) < len(input) else len(input)
 	for i in 0 ..< less {
 		output[i] = cast(R)input[i]
 	}
 }
 
 vec_to_override :: #force_inline proc "contextless" (base: [$Nr]$R, input: [$N]$T) -> [Nr]R {
-    output := base
-    less := len(base) if len(base) < len(input) else len(input)
+	output := base
+	less := len(base) if len(base) < len(input) else len(input)
 	for i in 0 ..< less {
 		output[i] = cast(R)input[i]
 	}
-    return output
+	return output
 }
 
 vec_to :: proc {
@@ -135,8 +138,8 @@ _triangle :: proc(img: ^Image, triangle: [3][4]f64, zbuf: []f64, shader: Shader)
 		clamp := [2]f64{f64(img.width - 1), f64(img.height - 1)}
 		for i in 0 ..< 3 {
 			for j in 0 ..< 2 {
-				aaf[j] = max(0, min(aaf[j], triangle[i][j]/triangle[i].w))
-				bbf[j] = min(clamp[j], max(bbf[j], triangle[i][j]/triangle[i].w))
+				aaf[j] = max(0, min(aaf[j], triangle[i][j] / triangle[i].w))
+				bbf[j] = min(clamp[j], max(bbf[j], triangle[i][j] / triangle[i].w))
 			}
 		}
 		aa = vec_to([2]int, aaf)
@@ -195,8 +198,8 @@ triangle :: proc(img: ^Image, triangle: [3][4]f64, zbuf: []f64, shader: Shader) 
 		clamp := [2]f64{f64(img.width - 1), f64(img.height - 1)}
 		for i in 0 ..< 3 {
 			for j in 0 ..< 2 {
-				aaf[j] = max(0, min(aaf[j], triangle[i][j]/triangle[i].w))
-				bbf[j] = min(clamp[j], max(bbf[j], triangle[i][j]/triangle[i].w))
+				aaf[j] = max(0, min(aaf[j], triangle[i][j] / triangle[i].w))
+				bbf[j] = min(clamp[j], max(bbf[j], triangle[i][j] / triangle[i].w))
 			}
 		}
 		aa = vec_to([2]int, aaf)
@@ -206,11 +209,7 @@ triangle :: proc(img: ^Image, triangle: [3][4]f64, zbuf: []f64, shader: Shader) 
 
 	for y in aa.y ..= bb.y {
 		for x in aa.x ..= bb.x {
-			triangle2D := [3][2]f64 {
-				triangle[0].xy,
-				triangle[1].xy,
-				triangle[2].xy,
-			}
+			triangle2D := [3][2]f64{triangle[0].xy, triangle[1].xy, triangle[2].xy}
 			point: [2]f64 = {f64(x), f64(y)}
 			barycenter := barycentric(triangle2D, point)
 
