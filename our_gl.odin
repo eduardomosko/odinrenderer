@@ -95,12 +95,35 @@ barycentric :: proc(t: [3][2]f64, p: [2]f64) -> [3]f64 {
 	return [3]f64{1 - uv.x - uv.y, uv.x, uv.y}
 }
 
-vec_to :: proc($Target: typeid/[$Nr]$R, input: [$N]$T) -> Target {
+vec_to_type :: #force_inline proc "contextless" ($Target: typeid/[$Nr]$R, input: [$N]$T) -> Target {
 	output: Target = 0
-	for i in 0 ..< len(output) {
+    less := len(output) if len(output) < len(input) else len(input)
+	for i in 0 ..< less {
 		output[i] = cast(R)input[i]
 	}
 	return output
+}
+
+vec_to_ptr :: #force_inline proc "contextless" (output: ^[$Nr]$R, input: [$N]$T) {
+    less := len(output) if len(output) < len(input) else len(input)
+	for i in 0 ..< less {
+		output[i] = cast(R)input[i]
+	}
+}
+
+vec_to_override :: #force_inline proc "contextless" (base: [$Nr]$R, input: [$N]$T) -> [Nr]R {
+    output := base
+    less := len(base) if len(base) < len(input) else len(input)
+	for i in 0 ..< less {
+		output[i] = cast(R)input[i]
+	}
+    return output
+}
+
+vec_to :: proc {
+	vec_to_type,
+	vec_to_ptr,
+	vec_to_override,
 }
 
 // weird version

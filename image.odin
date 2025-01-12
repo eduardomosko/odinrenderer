@@ -1,5 +1,6 @@
 package renderer
 
+import "base:intrinsics"
 import "core:bytes"
 import "core:fmt"
 import "core:image"
@@ -29,8 +30,8 @@ image_set :: proc(img: ^Image, color: Color, x: int, y: int) {
 image_get :: proc(img: ^image.Image, x, y: int) -> image.RGB_Pixel {
 	//assert(img.channels == 3)
 	assert(img.depth == 8)
-	assert(x >= 0 && x < img.width, fmt.tprintf("x: %v, w: %v", x, img.width))
-	assert(y >= 0 && y < img.height, fmt.tprintf("y: %v, h: %v", y, img.height))
+	assert(x >= 0 && x < img.width)
+	assert(y >= 0 && y < img.height)
 
 	pixel := image.RGB_Pixel{}
 
@@ -38,6 +39,14 @@ image_get :: proc(img: ^image.Image, x, y: int) -> image.RGB_Pixel {
 	assert(n == 3)
 	assert(err == nil)
 	return pixel
+}
+
+image_prefetch_pixel :: #force_inline proc(img: ^image.Image, x, y: int) {
+	intrinsics.prefetch_read_data(
+		cast(rawptr)(cast(uintptr)slice.first_ptr(img.pixels.buf[:]) +
+			cast(uintptr)((x + y * img.width) * img.channels)),
+		3,
+	)
 }
 
 image_write :: proc(img: ^Image, filepath: string) -> bool {
